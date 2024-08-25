@@ -130,15 +130,24 @@ app.registerExtension({
           this.removeInput(slot)
         }
       }
+      let inputOrder = {}
       for (const [inputName, inputInfo] of Object.entries(inputs)) {
         // Handle new inputs
         if (this.findInputSlot(inputName) === -1) {
           if (inputInfo[1]?.forceInput) {
             this.addInput(inputName, inputInfo[0])
-            continue
           }
         }
+        // Store off explicit sort order
+        if (inputInfo[1]?.displayOrder) {
+          inputOrder[inputName] = inputInfo[1].displayOrder
+        }
       }
+      this.inputs.sort((a, b) => {
+        const aOrder = inputOrder[a.name] ?? 0
+        const bOrder = inputOrder[b.name] ?? 0
+        return aOrder - bOrder
+      })
 
       const outputNames = dynamicNodeData['output_name']
       const oldOutputNames = this.nodeData['output_name']
