@@ -2,7 +2,6 @@ import { app } from '../../scripts/app'
 import { api } from '../../scripts/api'
 import { LLink, INodeOutputSlot, INodeInputSlot } from '@comfyorg/litegraph'
 import { ComfyNodeDef } from '@/types/apiTypes'
-import { debounce } from 'lodash'
 
 async function updateDynamicTypes(object_info) {
   for (const [nodeId, nodeData] of Object.entries(object_info)) {
@@ -14,6 +13,28 @@ async function updateDynamicTypes(object_info) {
     }
     // @ts-expect-error
     node.UpdateDynamicNodeTypes(nodeData)
+  }
+}
+
+function debounce(func: Function, periodMs: number) {
+  let timeout: NodeJS.Timeout | null = null
+  let queued: Boolean = false
+  let lastArgs: any[] = []
+  return (...args: any[]) => {
+    if (timeout) {
+      queued = true
+      lastArgs = args
+    } else {
+      func(...args)
+      queued = false
+      timeout = setTimeout(() => {
+        if (queued) {
+          func(...lastArgs)
+          queued = false
+        }
+        timeout = null
+      }, periodMs)
+    }
   }
 }
 
