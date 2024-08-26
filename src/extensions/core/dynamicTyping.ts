@@ -1,8 +1,16 @@
 import { app } from '../../scripts/app'
 import { api } from '../../scripts/api'
-import { LLink, INodeOutputSlot, INodeInputSlot } from '@comfyorg/litegraph'
+import {
+  LiteGraph,
+  LGraphNode,
+  LLink,
+  INodeOutputSlot,
+  INodeInputSlot
+} from '@comfyorg/litegraph'
 import { ComfyNodeDef } from '@/types/apiTypes'
 
+let lastRequest: number = 0
+let requestIdGen: number = 0
 async function updateDynamicTypes(object_info) {
   for (const [nodeId, nodeData] of Object.entries(object_info)) {
     // Convert the key to a number
@@ -16,53 +24,116 @@ async function updateDynamicTypes(object_info) {
   }
 }
 
-function debounce(func: Function, periodMs: number) {
+function debounce(
+  func: Function,
+  nonDebounced: Function,
+  prefixMs: number,
+  postfixMs: number
+) {
   let timeout: NodeJS.Timeout | null = null
   let queued: Boolean = false
   let lastArgs: any[] = []
-  return (...args: any[]) => {
-    if (timeout) {
-      queued = true
-      lastArgs = args
-    } else {
-      func(...args)
+  let handle = () => {
+    if (queued) {
+      func(...lastArgs)
       queued = false
+    }
+  }
+  return (...args: any[]) => {
+    if (nonDebounced) {
+      nonDebounced(...args)
+    }
+    if (timeout) {
+      lastArgs = args
+      queued = true
+    } else {
+      lastArgs = args
+      queued = true
       timeout = setTimeout(() => {
-        if (queued) {
-          func(...lastArgs)
-          queued = false
-        }
-        timeout = null
-      }, periodMs)
+        handle()
+        timeout = setTimeout(() => {
+          handle()
+          timeout = null
+        }, postfixMs)
+      }, prefixMs)
     }
   }
 }
 
-const resolveDynamicTypes = debounce(async () => {
-  const p = await app.graphToPrompt()
-  if (!('output' in p)) {
-    console.log('Skipping dynamic type resolution -- no prompt found', p)
-    return
+const resolveDynamicTypes = debounce(
+  async () => {
+    let currentRequest = requestIdGen
+    lastRequest = currentRequest
+    const p = await app.graphToPrompt()
+    if (!('output' in p)) {
+      console.log('Skipping dynamic type resolution -- no prompt found', p)
+      return
+    }
+    const request = {
+      client_id: api.clientId,
+      prompt: p.output
+    }
+    const response = await api.fetchApi('/resolve_dynamic_types', {
+      method: 'POST',
+      body: JSON.stringify(request)
+    })
+    if (!response.ok) {
+      console.error('Error:', response)
+      return
+    }
+    const data = await response.json()
+    if (lastRequest !== currentRequest) {
+      console.log(
+        'Skipping dynamic type resolution -- newer request in progress'
+      )
+      return
+    }
+    await updateDynamicTypes(data)
+  },
+  () => ++requestIdGen,
+  5,
+  500
+)
+
+// @ts-expect-error
+const oldIsValidConnection = LiteGraph.isValidConnection
+// @ts-expect-error
+LiteGraph.isValidConnection = function (type1: str, type2: str) {
+  if (oldIsValidConnection(type1, type2)) {
+    return true
   }
-  const request = {
-    client_id: api.clientId,
-    prompt: p.output
+  // If the character '*' is in either type, use a regex to check against the other type
+  if (type1.includes('*')) {
+    const re = new RegExp('^' + type1.replace(/\*/g, '.*') + '$')
+    if (re.test(type2)) {
+      return true
+    }
   }
-  const response = await api.fetchApi('/resolve_dynamic_types', {
-    method: 'POST',
-    body: JSON.stringify(request)
-  })
-  if (!response.ok) {
-    console.error('Error:', response)
-    return
+  if (type2.includes('*')) {
+    const re = new RegExp('^' + type2.replace(/\*/g, '.*') + '$')
+    if (re.test(type1)) {
+      return true
+    }
   }
-  const data = await response.json()
-  await updateDynamicTypes(data)
-}, 100)
+  return false
+}
 
 app.registerExtension({
   name: 'Comfy.DynamicTyping',
   async beforeRegisterNodeDef(nodeType, nodeData, _) {
+    const oldOnConnectInput = nodeType?.prototype?.onConnectInput
+    nodeType.prototype.onConnectInput = function (
+      slotIndex: number,
+      type: string,
+      link: LLink
+    ) {
+      if (oldOnConnectInput) {
+        if (!oldOnConnectInput.call(this, slotIndex, type, link)) {
+          return false
+        }
+      }
+      return true
+    }
     const oldOnConnectionsChange = nodeType?.prototype?.onConnectionsChange
     nodeType.prototype.onConnectionsChange = function (
       type: number,
@@ -84,9 +155,12 @@ app.registerExtension({
       resolveDynamicTypes()
     }
     nodeType.prototype.UpdateDynamicNodeTypes = function (
+      this: LGraphNode,
       dynamicNodeData: ComfyNodeDef
     ) {
+      // @ts-expect-error
       if (!this.nodeData) {
+        // @ts-expect-error
         this.nodeData = nodeData
       }
       const inputs = Object.assign(
@@ -94,33 +168,26 @@ app.registerExtension({
         dynamicNodeData['input']['required'],
         dynamicNodeData['input']['optional'] ?? {}
       )
-      const oldInputs = Object.assign(
-        {},
-        this.nodeData['input']['required'],
-        this.nodeData['input']['optional'] ?? {}
-      )
       const inputs_to_remove = []
       for (const { name } of this.inputs) {
-        const inputInfo = oldInputs[name]
         // Handle removed inputs
         if (!(name in inputs)) {
-          if (inputInfo && inputInfo[1] && !inputInfo[1].forceInput) {
-            throw new Error('Dynamic inputs must have forceInput set')
-          }
           inputs_to_remove.push(name)
           continue
         }
-        if (!inputInfo) {
-          continue
-        }
         // Handle the changing of input types
-        if (inputs[name][0] !== inputInfo[0]) {
-          if (!inputInfo[1]?.forceInput) {
+        const slot = this.findInputSlot(name)
+        if (slot !== -1 && this.inputs[slot].type !== inputs[name][0]) {
+          if (!inputs[name][1]?.forceInput) {
             throw new Error('Dynamic inputs must have forceInput set')
           }
-          const slot = this.findInputSlot(name)
           if (slot !== -1) {
             this.inputs[slot].type = inputs[name][0]
+            // Update any links with the type
+            if (this.inputs[slot].link) {
+              let link = this.graph.links[this.inputs[slot].link]
+              link.type = inputs[name][0]
+            }
           }
         }
       }
@@ -150,9 +217,13 @@ app.registerExtension({
       })
 
       const outputNames = dynamicNodeData['output_name']
-      const oldOutputNames = this.nodeData['output_name']
-      const outputTypes = dynamicNodeData['output']
-      const oldOutputTypes = this.nodeData['output']
+      const outputTypes: string[] = dynamicNodeData['output'].map((x) => {
+        if (typeof x === 'string') {
+          return x
+        } else {
+          return 'COMBO'
+        }
+      })
       const outputs_to_remove = []
       for (const { name } of this.outputs) {
         // Handle removed outputs
@@ -162,11 +233,17 @@ app.registerExtension({
         }
         // Handle the changing of output types
         const outputIndex = outputNames.indexOf(name)
-        const oldOutputIndex = oldOutputNames.indexOf(name)
-        if (outputTypes[outputIndex] !== oldOutputTypes[oldOutputIndex]) {
-          const slot = this.findOutputSlot(name)
-          if (slot !== -1) {
-            this.outputs[slot].type = outputTypes[outputIndex]
+        const outputSlot = this.findOutputSlot(name)
+        if (
+          outputSlot !== -1 &&
+          this.outputs[outputSlot].type !== outputTypes[outputIndex]
+        ) {
+          this.outputs[outputSlot].type = outputTypes[outputIndex]
+          if (this.outputs[outputSlot].links) {
+            for (const linkId of this.outputs[outputSlot].links) {
+              let link = this.graph.links[linkId]
+              link.type = outputTypes[outputIndex]
+            }
           }
         }
       }
@@ -185,6 +262,7 @@ app.registerExtension({
         this.addOutput(outputName, outputTypes[i])
       }
 
+      // @ts-expect-error
       this.nodeData = Object.assign({}, this.nodeData, dynamicNodeData)
       this.setDirtyCanvas(true, true)
     }
