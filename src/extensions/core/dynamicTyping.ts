@@ -118,6 +118,66 @@ LiteGraph.isValidConnection = function (type1: str, type2: str) {
   return false
 }
 
+function updateNodeInput(
+  node: LGraphNode,
+  name: string,
+  inputInfo: any | null
+) {
+  // TODO - Update to support non-forceInput inputs (i.e. things with widgets)
+  const slot = node.findInputSlot(name)
+  if (slot === -1 && inputInfo) {
+    // Add a new input
+    if (inputInfo[1]?.forceInput) {
+      node.addInput(name, inputInfo[0])
+    }
+  } else if (slot !== -1 && !inputInfo) {
+    // Remove an old input
+    node.removeInput(slot)
+  } else {
+    // Update an existing input
+    if (node.inputs[slot].type !== inputInfo[0]) {
+      if (!inputInfo[1]?.forceInput) {
+        throw new Error('Dynamic inputs must have forceInput set')
+      }
+      node.inputs[slot].type = inputInfo[0]
+      // Update any links with the type
+      if (node.inputs[slot].link) {
+        let link = node.graph.links[node.inputs[slot].link]
+        link.type = inputInfo[0]
+      }
+    }
+  }
+}
+
+function updateNodeOutput(
+  node: LGraphNode,
+  index: number,
+  type: string | null,
+  name: string | null
+) {
+  if (index < node.outputs.length && type === null && name === null) {
+    // Remove an old output
+    node.removeOutput(index)
+  } else if (index >= node.outputs.length) {
+    // Add a new output
+    node.addOutput(name, type)
+  } else {
+    // Update an existing output
+    if (node.outputs[index].name !== name) {
+      node.outputs[index].name = name
+    }
+    if (node.outputs[index].type !== type) {
+      node.outputs[index].type = type
+      if (node.outputs[index].links) {
+        for (const linkId of node.outputs[index].links) {
+          let link = node.graph.links[linkId]
+          link.type = type
+        }
+      }
+    }
+  }
+}
+
 app.registerExtension({
   name: 'Comfy.DynamicTyping',
   async beforeRegisterNodeDef(nodeType, nodeData, _) {
@@ -172,39 +232,18 @@ app.registerExtension({
       for (const { name } of this.inputs) {
         // Handle removed inputs
         if (!(name in inputs)) {
+          // Avoid removing while iterating. (Does JavasScript handle that in a smart way?)
           inputs_to_remove.push(name)
           continue
         }
-        // Handle the changing of input types
-        const slot = this.findInputSlot(name)
-        if (slot !== -1 && this.inputs[slot].type !== inputs[name][0]) {
-          if (!inputs[name][1]?.forceInput) {
-            throw new Error('Dynamic inputs must have forceInput set')
-          }
-          if (slot !== -1) {
-            this.inputs[slot].type = inputs[name][0]
-            // Update any links with the type
-            if (this.inputs[slot].link) {
-              let link = this.graph.links[this.inputs[slot].link]
-              link.type = inputs[name][0]
-            }
-          }
-        }
       }
       for (const name of inputs_to_remove) {
-        const slot = this.findInputSlot(name)
-        if (slot !== -1) {
-          this.removeInput(slot)
-        }
+        updateNodeInput(this, name, null)
       }
       let inputOrder = {}
       for (const [inputName, inputInfo] of Object.entries(inputs)) {
         // Handle new inputs
-        if (this.findInputSlot(inputName) === -1) {
-          if (inputInfo[1]?.forceInput) {
-            this.addInput(inputName, inputInfo[0])
-          }
-        }
+        updateNodeInput(this, inputName, inputInfo)
         // Store off explicit sort order
         if (inputInfo[1]?.displayOrder) {
           inputOrder[inputName] = inputInfo[1].displayOrder
@@ -216,50 +255,20 @@ app.registerExtension({
         return aOrder - bOrder
       })
 
-      const outputNames = dynamicNodeData['output_name']
-      const outputTypes: string[] = dynamicNodeData['output'].map((x) => {
-        if (typeof x === 'string') {
-          return x
-        } else {
-          return 'COMBO'
-        }
-      })
-      const outputs_to_remove = []
-      for (const { name } of this.outputs) {
-        // Handle removed outputs
-        if (!outputNames.includes(name)) {
-          outputs_to_remove.push(name)
-          continue
-        }
-        // Handle the changing of output types
-        const outputIndex = outputNames.indexOf(name)
-        const outputSlot = this.findOutputSlot(name)
-        if (
-          outputSlot !== -1 &&
-          this.outputs[outputSlot].type !== outputTypes[outputIndex]
-        ) {
-          this.outputs[outputSlot].type = outputTypes[outputIndex]
-          if (this.outputs[outputSlot].links) {
-            for (const linkId of this.outputs[outputSlot].links) {
-              let link = this.graph.links[linkId]
-              link.type = outputTypes[outputIndex]
-            }
-          }
-        }
+      // Delete any removed outputs
+      for (
+        let i = this.outputs.length - 1;
+        i >= dynamicNodeData['output_name'].length;
+        i--
+      ) {
+        updateNodeOutput(this, i, null, null)
       }
-      for (const name of outputs_to_remove) {
-        const slot = this.findOutputSlot(name)
-        if (slot !== -1) {
-          this.removeOutput(slot)
-        }
-      }
-      for (const [i, outputName] of Object.entries(outputNames)) {
-        // Handle new outputs
-        const slot = this.findOutputSlot(outputName)
-        if (slot !== -1) {
-          continue
-        }
-        this.addOutput(outputName, outputTypes[i])
+      // Handle any added or updated outputs
+      for (let i = 0; i < dynamicNodeData['output'].length; i++) {
+        const outputName = dynamicNodeData['output_name'][i]
+        const rawType = dynamicNodeData['output'][i]
+        const outputType = typeof rawType === 'string' ? rawType : 'COMBO'
+        updateNodeOutput(this, i, outputType, outputName)
       }
 
       // @ts-expect-error
