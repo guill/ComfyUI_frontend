@@ -95,8 +95,7 @@ const resolveDynamicTypes = debounce(
   500
 )
 
-// @ts-expect-error
-const oldIsValidConnection = LiteGraph.isValidConnection
+const oldIsValidConnection = LiteGraph.isValidConnection.bind(LiteGraph)
 // @ts-expect-error
 LiteGraph.isValidConnection = function (type1: str, type2: str) {
   if (oldIsValidConnection(type1, type2)) {
