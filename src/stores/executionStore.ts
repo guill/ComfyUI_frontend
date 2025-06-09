@@ -11,6 +11,8 @@ import type {
   ExecutionErrorWsMessage,
   ExecutionStartWsMessage,
   NodeError,
+  NodeProgressState,
+  ProgressStateWsMessage,
   ProgressTextWsMessage,
   ProgressWsMessage
 } from '@/schemas/apiSchema'
@@ -60,6 +62,9 @@ export const useExecutionStore = defineStore('execution', () => {
     )
   })
 
+  // This is the progress of all nodes in the currently executing workflow
+  const nodeProgressStates = ref<Record<string, NodeProgressState>>({})
+
   // This is the progress of the currently executing node, if any
   const _executingNodeProgress = ref<ProgressWsMessage | null>(null)
   const executingNodeProgress = computed(() =>
@@ -103,6 +108,7 @@ export const useExecutionStore = defineStore('execution', () => {
     api.addEventListener('executed', handleExecuted as EventListener)
     api.addEventListener('executing', handleExecuting as EventListener)
     api.addEventListener('progress', handleProgress as EventListener)
+    api.addEventListener('progress_state', handleProgressState as EventListener)
     api.addEventListener('status', handleStatus as EventListener)
     api.addEventListener(
       'execution_error',
@@ -127,6 +133,10 @@ export const useExecutionStore = defineStore('execution', () => {
     api.removeEventListener('executed', handleExecuted as EventListener)
     api.removeEventListener('executing', handleExecuting as EventListener)
     api.removeEventListener('progress', handleProgress as EventListener)
+    api.removeEventListener(
+      'progress_state',
+      handleProgressState as EventListener
+    )
     api.removeEventListener('status', handleStatus as EventListener)
     api.removeEventListener(
       'execution_error',
@@ -172,6 +182,23 @@ export const useExecutionStore = defineStore('execution', () => {
         delete queuedPrompts.value[activePromptId.value]
       }
       activePromptId.value = null
+    }
+  }
+
+  function handleProgressState(e: CustomEvent<ProgressStateWsMessage>) {
+    const { nodes } = e.detail
+    // Update the progress states for all nodes
+    nodeProgressStates.value = nodes
+
+    // If we have progress for the currently executing node, update it for backwards compatibility
+    if (executingNodeId.value && nodes[executingNodeId.value]) {
+      const nodeState = nodes[executingNodeId.value]
+      _executingNodeProgress.value = {
+        value: nodeState.value,
+        max: nodeState.max,
+        prompt_id: nodeState.prompt_id,
+        node: nodeState.node
+      }
     }
   }
 
@@ -289,6 +316,10 @@ export const useExecutionStore = defineStore('execution', () => {
      * The progress of the executing node (if the node reports progress)
      */
     executingNodeProgress,
+    /**
+     * All node progress states from progress_state events
+     */
+    nodeProgressStates,
     bindExecutionEvents,
     unbindExecutionEvents,
     storePrompt,

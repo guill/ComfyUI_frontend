@@ -191,17 +191,44 @@ watch(
 
 // Update the progress of the executing node
 watch(
+  () => executionStore.nodeProgressStates,
+  (nodeProgressStates) => {
+    for (const node of comfyApp.graph.nodes) {
+      const progressState = nodeProgressStates[node.id]
+      if (progressState) {
+        // Only show progress for non-completed nodes
+        if (progressState.state === 'running') {
+          node.progress = progressState.value / progressState.max
+        } else if (progressState.state === 'finished') {
+          // Node is complete, clear progress
+          node.progress = undefined
+        } else if (progressState.state === 'error') {
+          // Node has error, you might want to indicate this differently
+          node.progress = undefined
+        }
+      } else {
+        // No progress state for this node
+        node.progress = undefined
+      }
+    }
+  },
+  { deep: true }
+)
+
+// Fallback for legacy progress updates
+watch(
   () =>
     [executionStore.executingNodeId, executionStore.executingNodeProgress] as [
       NodeId | null,
       number | null
     ],
   ([executingNodeId, executingNodeProgress]) => {
-    for (const node of comfyApp.graph.nodes) {
-      if (node.id == executingNodeId) {
-        node.progress = executingNodeProgress ?? undefined
-      } else {
-        node.progress = undefined
+    // Only update if we don't have a progress state for this node
+    if (!executionStore.nodeProgressStates[executingNodeId as string]) {
+      for (const node of comfyApp.graph.nodes) {
+        if (node.id == executingNodeId) {
+          node.progress = executingNodeProgress ?? undefined
+        }
       }
     }
   }

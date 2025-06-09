@@ -15,6 +15,7 @@ import type {
   LogsRawResponse,
   LogsWsMessage,
   PendingTaskItem,
+  ProgressStateWsMessage,
   ProgressTextWsMessage,
   ProgressWsMessage,
   PromptResponse,
@@ -104,6 +105,7 @@ interface BackendApiCalls {
   /** Binary preview/progress data */
   b_preview: Blob
   progress_text: ProgressTextWsMessage
+  progress_state: ProgressStateWsMessage
   display_component: DisplayComponentWsMessage
 }
 
@@ -461,6 +463,7 @@ export class ComfyApi extends EventTarget {
             case 'execution_cached':
             case 'execution_success':
             case 'progress':
+            case 'progress_state':
             case 'executed':
             case 'graphChanged':
             case 'promptQueued':
