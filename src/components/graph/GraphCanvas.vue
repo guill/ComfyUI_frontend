@@ -71,7 +71,6 @@ import { useWorkflowAutoSave } from '@/composables/useWorkflowAutoSave'
 import { useWorkflowPersistence } from '@/composables/useWorkflowPersistence'
 import { CORE_SETTINGS } from '@/constants/coreSettings'
 import { i18n, t } from '@/i18n'
-import type { NodeId } from '@/schemas/comfyWorkflowSchema'
 import { UnauthorizedError, api } from '@/scripts/api'
 import { app as comfyApp } from '@/scripts/app'
 import { ChangeTracker } from '@/scripts/changeTracker'
@@ -189,49 +188,36 @@ watch(
   }
 )
 
-// Update the progress of the executing node
+// Update the progress of executing nodes
 watch(
   () => executionStore.nodeProgressStates,
   (nodeProgressStates) => {
+    // Clear progress for all nodes first
     for (const node of comfyApp.graph.nodes) {
-      const progressState = nodeProgressStates[node.id]
-      if (progressState) {
-        // Only show progress for non-completed nodes
+      node.progress = undefined
+    }
+
+    // Then set progress for nodes with progress states
+    for (const nodeId in nodeProgressStates) {
+      const progressState = nodeProgressStates[nodeId]
+      const node = comfyApp.graph.getNodeById(nodeId)
+
+      if (node && progressState) {
+        // Only show progress for running nodes
         if (progressState.state === 'running') {
           node.progress = progressState.value / progressState.max
-        } else if (progressState.state === 'finished') {
-          // Node is complete, clear progress
-          node.progress = undefined
         } else if (progressState.state === 'error') {
           // Node has error, you might want to indicate this differently
+          // For now, clear progress
           node.progress = undefined
         }
-      } else {
-        // No progress state for this node
-        node.progress = undefined
       }
     }
+
+    // TODO - Do we need to force canvas redraw here?
+    // comfyApp.graph.setDirtyCanvas(true, true)
   },
   { deep: true }
-)
-
-// Fallback for legacy progress updates
-watch(
-  () =>
-    [executionStore.executingNodeId, executionStore.executingNodeProgress] as [
-      NodeId | null,
-      number | null
-    ],
-  ([executingNodeId, executingNodeProgress]) => {
-    // Only update if we don't have a progress state for this node
-    if (!executionStore.nodeProgressStates[executingNodeId as string]) {
-      for (const node of comfyApp.graph.nodes) {
-        if (node.id == executingNodeId) {
-          node.progress = executingNodeProgress ?? undefined
-        }
-      }
-    }
-  }
 )
 
 // Update node slot errors

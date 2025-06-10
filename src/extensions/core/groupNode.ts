@@ -1179,8 +1179,7 @@ export class GroupNodeHandler {
       // @ts-expect-error fixme ts strict error
       onDrawForeground?.apply?.(this, arguments)
       if (
-        // @ts-expect-error fixme ts strict error
-        +app.runningNodeId === this.id &&
+        app.runningNodeIds.includes(String(this.id)) &&
         this.runningInternalNodeId !== null
       ) {
         // @ts-expect-error fixme ts strict error

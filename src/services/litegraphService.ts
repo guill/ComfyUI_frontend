@@ -96,7 +96,7 @@ export const useLitegraphService = () => {
        */
       #setupStrokeStyles() {
         this.strokeStyles['running'] = function (this: LGraphNode) {
-          if (this.id == app.runningNodeId) {
+          if (app.runningNodeIds.includes(String(this.id))) {
             return { color: '#0f0' }
           }
         }
