@@ -9,6 +9,7 @@ import {
 } from '@/schemas/comfyWorkflowSchema'
 import type { ComfyNodeDef } from '@/schemas/nodeDefSchema'
 import { useDialogService } from '@/services/dialogService'
+import { useExecutionStore } from '@/stores/executionStore'
 import { useNodeDefStore } from '@/stores/nodeDefStore'
 import { useToastStore } from '@/stores/toastStore'
 import { useWidgetStore } from '@/stores/widgetStore'
@@ -1178,8 +1179,10 @@ export class GroupNodeHandler {
     node.onDrawForeground = function (ctx) {
       // @ts-expect-error fixme ts strict error
       onDrawForeground?.apply?.(this, arguments)
+      const executionStore = useExecutionStore()
       if (
-        app.runningNodeIds.includes(String(this.id)) &&
+        executionStore.nodeProgressStates[this.id] &&
+        executionStore.nodeProgressStates[this.id].state === 'running' &&
         this.runningInternalNodeId !== null
       ) {
         // @ts-expect-error fixme ts strict error

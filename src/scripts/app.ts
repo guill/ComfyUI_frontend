@@ -190,13 +190,6 @@ export class ComfyApp {
   }
 
   /**
-   * @deprecated Use useExecutionStore().executingNodeIds instead
-   */
-  get runningNodeIds(): NodeId[] {
-    return useExecutionStore().executingNodeIds
-  }
-
-  /**
    * @deprecated Use useWorkspaceStore().shiftDown instead
    */
   get shiftDown(): boolean {
