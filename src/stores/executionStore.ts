@@ -201,15 +201,9 @@ export const useExecutionStore = defineStore('execution', () => {
       const nodeState = nodes[nodeId]
       if (nodeState.state === 'running' && !nodeProgressStates.value[nodeId]) {
         // This node just started executing, revoke its previews
-        app.revokePreviews(nodeId)
-        delete app.nodePreviewImages[nodeId]
-      }
-    }
-
-    // Revoke previews for nodes that are no longer executing
-    for (const nodeId in nodeProgressStates.value) {
-      if (!nodes[nodeId] || nodes[nodeId].state !== 'running') {
-        // This node is no longer executing, clean up its previews
+        // Note that we're doing the *actual* node id instead of the display node id
+        // here intentionally. That way, we don't clear the preview every time a new node
+        // within an expanded graph starts executing.
         app.revokePreviews(nodeId)
         delete app.nodePreviewImages[nodeId]
       }
@@ -225,7 +219,7 @@ export const useExecutionStore = defineStore('execution', () => {
         value: nodeState.value,
         max: nodeState.max,
         prompt_id: nodeState.prompt_id,
-        node: nodeState.node
+        node: nodeState.display_node_id || nodeState.node_id
       }
     }
   }

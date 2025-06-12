@@ -108,6 +108,9 @@ interface BackendApiCalls {
   b_preview_with_metadata: {
     blob: Blob
     nodeId: string
+    parentNodeId: string
+    displayNodeId: string
+    realNodeId: string
     promptId: string
   }
   progress_text: ProgressTextWsMessage
@@ -458,6 +461,9 @@ export class ComfyApi extends EventTarget {
               this.dispatchCustomEvent('b_preview_with_metadata', {
                 blob: imageBlob4,
                 nodeId: metadata.node_id,
+                displayNodeId: metadata.display_node_id,
+                parentNodeId: metadata.parent_node_id,
+                realNodeId: metadata.real_node_id,
                 promptId: metadata.prompt_id
               })
 

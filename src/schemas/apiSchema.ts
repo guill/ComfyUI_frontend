@@ -49,8 +49,11 @@ const zNodeProgressState = z.object({
   value: z.number(),
   max: z.number(),
   state: z.enum(['pending', 'running', 'finished', 'error']),
-  node: zNodeId,
-  prompt_id: zPromptId
+  node_id: zNodeId,
+  prompt_id: zPromptId,
+  display_node_id: zNodeId.optional(),
+  parent_node_id: zNodeId.optional(),
+  real_node_id: zNodeId.optional()
 })
 
 const zProgressStateWsMessage = z.object({

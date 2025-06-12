@@ -625,7 +625,6 @@ export class ComfyApp {
 
     api.addEventListener('executing', () => {
       this.graph.setDirtyCanvas(true, false)
-      // Preview invalidation moved to progress_state handler to support multiple nodes
     })
 
     api.addEventListener('executed', ({ detail }) => {
@@ -676,10 +675,11 @@ export class ComfyApp {
 
     api.addEventListener('b_preview_with_metadata', ({ detail }) => {
       // Enhanced preview with explicit node context
-      const { blob, nodeId } = detail
+      const { blob, displayNodeId } = detail
+      this.revokePreviews(displayNodeId)
       const blobUrl = URL.createObjectURL(blob)
       // Preview cleanup is now handled in progress_state event to support multiple concurrent previews
-      this.nodePreviewImages[nodeId] = [blobUrl]
+      this.nodePreviewImages[displayNodeId] = [blobUrl]
     })
 
     api.init()
